@@ -100,7 +100,7 @@ describe('Webhook de WhatsApp', () => {
       expect(url).toBe('https://graph.facebook.com/v21.0/12345/messages');
       expect(init.headers.Authorization).toBe('Bearer token-graph');
       expect(JSON.parse(init.body)).toMatchObject({
-        to: '5491100000000',
+        to: '541100000000', // se saca el 9 de los celulares argentinos
         text: { body: 'Eco: hola' },
       });
     });

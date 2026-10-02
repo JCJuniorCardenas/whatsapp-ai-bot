@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { normalizeRecipient } from './normalize-phone';
 import { WhatsappWebhookPayload } from './whatsapp.types';
 
 @Injectable()
@@ -24,7 +25,7 @@ export class WhatsappService {
         },
         body: JSON.stringify({
           messaging_product: 'whatsapp',
-          to,
+          to: normalizeRecipient(to),
           type: 'text',
           text: { body },
         }),

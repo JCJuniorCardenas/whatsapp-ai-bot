@@ -1,0 +1,108 @@
+import { INestApplication } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
+import { createHmac } from 'crypto';
+import request from 'supertest';
+import { WhatsappModule } from './whatsapp.module';
+
+const SECRET = 'secreto-de-test';
+const env = {
+  WHATSAPP_VERIFY_TOKEN: 'token-de-test',
+  WHATSAPP_APP_SECRET: SECRET,
+  WHATSAPP_TOKEN: 'token-graph',
+  WHATSAPP_PHONE_NUMBER_ID: '12345',
+  WHATSAPP_API_VERSION: 'v21.0',
+};
+
+const sign = (body: string) =>
+  'sha256=' + createHmac('sha256', SECRET).update(body).digest('hex');
+
+const payload = {
+  object: 'whatsapp_business_account',
+  entry: [
+    {
+      changes: [
+        {
+          value: {
+            messages: [
+              { from: '5491100000000', id: 'm1', type: 'text', text: { body: 'hola' } },
+            ],
+          },
+        },
+      ],
+    },
+  ],
+};
+
+describe('Webhook de WhatsApp', () => {
+  let app: INestApplication;
+  let fetchMock: jest.Mock;
+
+  beforeEach(async () => {
+    fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '' });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true, load: [() => env] }),
+        WhatsappModule,
+      ],
+    }).compile();
+    app = moduleRef.createNestApplication({ rawBody: true });
+    await app.init();
+  });
+
+  afterEach(() => app.close());
+
+  describe('GET /webhook', () => {
+    it('devuelve el challenge si el token es correcto', async () => {
+      await request(app.getHttpServer())
+        .get('/webhook')
+        .query({ 'hub.mode': 'subscribe', 'hub.verify_token': env.WHATSAPP_VERIFY_TOKEN, 'hub.challenge': '777' })
+        .expect(200)
+        .expect('777');
+    });
+
+    it('rechaza con 403 si el token es incorrecto', async () => {
+      await request(app.getHttpServer())
+        .get('/webhook')
+        .query({ 'hub.mode': 'subscribe', 'hub.verify_token': 'malo', 'hub.challenge': '777' })
+        .expect(403);
+    });
+  });
+
+  describe('POST /webhook', () => {
+    it('rechaza con 401 si no hay firma', async () => {
+      await request(app.getHttpServer()).post('/webhook').send(payload).expect(401);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('rechaza con 401 si la firma es inválida', async () => {
+      await request(app.getHttpServer())
+        .post('/webhook')
+        .set('x-hub-signature-256', 'sha256=' + '0'.repeat(64))
+        .send(payload)
+        .expect(401);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('con firma válida responde el eco por la Graph API', async () => {
+      const body = JSON.stringify(payload);
+      await request(app.getHttpServer())
+        .post('/webhook')
+        .set('Content-Type', 'application/json')
+        .set('x-hub-signature-256', sign(body))
+        .send(body)
+        .expect(200);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('https://graph.facebook.com/v21.0/12345/messages');
+      expect(init.headers.Authorization).toBe('Bearer token-graph');
+      expect(JSON.parse(init.body)).toMatchObject({
+        to: '5491100000000',
+        text: { body: 'Eco: hola' },
+      });
+    });
+  });
+});

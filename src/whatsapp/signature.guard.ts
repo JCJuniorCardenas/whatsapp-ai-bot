@@ -2,6 +2,7 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -14,6 +15,8 @@ import type { Request } from 'express';
  */
 @Injectable()
 export class SignatureGuard implements CanActivate {
+  private readonly logger = new Logger(SignatureGuard.name);
+
   constructor(private readonly config: ConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
@@ -23,6 +26,7 @@ export class SignatureGuard implements CanActivate {
     const header = req.header('x-hub-signature-256');
 
     if (!header || !req.rawBody) {
+      this.logger.warn('POST /webhook sin firma o sin body crudo');
       throw new UnauthorizedException('Falta la firma');
     }
 
@@ -34,6 +38,7 @@ export class SignatureGuard implements CanActivate {
     const b = Buffer.from(expected);
     // timingSafeEqual exige mismo largo y evita ataques por tiempo de respuesta.
     if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      this.logger.warn('Firma inválida: revisá WHATSAPP_APP_SECRET');
       throw new UnauthorizedException('Firma inválida');
     }
     return true;

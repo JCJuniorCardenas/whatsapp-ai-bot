@@ -41,9 +41,11 @@ export class WhatsappService {
     for (const entry of payload.entry ?? []) {
       for (const change of entry.changes ?? []) {
         for (const message of change.value?.messages ?? []) {
+          this.logger.log(`Mensaje recibido (${message.type}) de ${message.from}`);
           if (message.type !== 'text' || !message.text) continue;
           try {
             await this.sendTextMessage(message.from, `Eco: ${message.text.body}`);
+            this.logger.log(`Eco enviado a ${message.from}`);
           } catch (err) {
             // No tiramos el error: si el webhook devuelve 500, Meta reintenta y duplica mensajes.
             this.logger.error(`No se pudo responder a ${message.from}`, err);

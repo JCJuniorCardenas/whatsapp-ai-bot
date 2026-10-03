@@ -3,7 +3,11 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { createHmac } from 'crypto';
 import request from 'supertest';
-import { WhatsappModule } from './whatsapp.module';
+import { ContactsService } from '../contacts/contacts.service';
+import { MessagesService } from '../messages/messages.service';
+import { SignatureGuard } from './signature.guard';
+import { WhatsappController } from './whatsapp.controller';
+import { WhatsappService } from './whatsapp.service';
 
 const SECRET = 'secreto-de-test';
 const env = {
@@ -37,15 +41,30 @@ const payload = {
 describe('Webhook de WhatsApp', () => {
   let app: INestApplication;
   let fetchMock: jest.Mock;
+  const contacts = { findOrCreate: jest.fn() };
+  const messages = { saveIncoming: jest.fn(), saveOutgoing: jest.fn() };
 
   beforeEach(async () => {
-    fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '' });
+    jest.clearAllMocks();
+    contacts.findOrCreate.mockResolvedValue({ id: 'c1', phone: '5491100000000' });
+    messages.saveIncoming.mockResolvedValue({ id: 'm1' });
+    fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      text: async () => '',
+      json: async () => ({ messages: [{ id: 'wamid.out' }] }),
+    });
     global.fetch = fetchMock as unknown as typeof fetch;
 
     const moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true, load: [() => env] }),
-        WhatsappModule,
+      ],
+      controllers: [WhatsappController],
+      providers: [
+        WhatsappService,
+        SignatureGuard,
+        { provide: ContactsService, useValue: contacts },
+        { provide: MessagesService, useValue: messages },
       ],
     }).compile();
     app = moduleRef.createNestApplication({ rawBody: true });
@@ -86,6 +105,18 @@ describe('Webhook de WhatsApp', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    it('no responde si el mensaje ya estaba guardado (reintento de Meta)', async () => {
+      messages.saveIncoming.mockResolvedValue(null);
+      const body = JSON.stringify(payload);
+      await request(app.getHttpServer())
+        .post('/webhook')
+        .set('Content-Type', 'application/json')
+        .set('x-hub-signature-256', sign(body))
+        .send(body)
+        .expect(200);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it('con firma válida responde el eco por la Graph API', async () => {
       const body = JSON.stringify(payload);
       await request(app.getHttpServer())
@@ -99,6 +130,8 @@ describe('Webhook de WhatsApp', () => {
       const [url, init] = fetchMock.mock.calls[0];
       expect(url).toBe('https://graph.facebook.com/v21.0/12345/messages');
       expect(init.headers.Authorization).toBe('Bearer token-graph');
+      expect(messages.saveIncoming).toHaveBeenCalledWith(expect.anything(), 'm1', 'hola');
+      expect(messages.saveOutgoing).toHaveBeenCalledWith(expect.anything(), 'Eco: hola', 'wamid.out');
       expect(JSON.parse(init.body)).toMatchObject({
         to: '541100000000', // se saca el 9 de los celulares argentinos
         text: { body: 'Eco: hola' },

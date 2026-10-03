@@ -10,7 +10,10 @@ export interface WhatsappWebhookPayload {
   object?: string;
   entry?: {
     changes?: {
-      value?: { messages?: WhatsappMessage[] };
+      value?: {
+        messages?: WhatsappMessage[];
+        contacts?: { wa_id: string; profile?: { name?: string } }[];
+      };
     }[];
   }[];
 }

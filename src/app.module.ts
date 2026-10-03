@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { buildDataSourceOptions } from './database/database.config';
+import { HealthModule } from './health/health.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 
 @Module({
@@ -14,6 +15,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
         migrationsRun: true, // aplica las migraciones pendientes al arrancar
       }),
     }),
+    HealthModule,
     WhatsappModule,
   ],
 })

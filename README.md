@@ -2,14 +2,27 @@
 
 Bot de WhatsApp para agendar turnos. **Fase 1:** webhook de Meta + eco del mensaje (sin IA ni base de datos todavía).
 
-Stack: NestJS, TypeScript, Swagger, Jest. (PostgreSQL/TypeORM y deploy en Render vienen en próximas fases.)
+Stack: NestJS, TypeScript, PostgreSQL con TypeORM, Swagger, Jest. (El deploy en Render viene en una próxima fase.)
+
+**Fase 2:** se guardan contactos y mensajes en PostgreSQL y se ignoran los reintentos de Meta (no se responde dos veces al mismo mensaje).
 
 ## Cómo correrlo
 
 ```bash
 npm install
 cp .env.example .env   # y completá los valores (ver abajo)
-npm run start:dev
+docker compose up -d   # levanta PostgreSQL (necesita Docker Desktop abierto)
+npm run start:dev      # aplica las migraciones al arrancar
+```
+
+PostgreSQL queda en el puerto **5433** para no chocar con un Postgres instalado en tu máquina.
+
+### Migraciones
+
+```bash
+npm run migration:generate -- src/database/migrations/NombreDelCambio   # después de cambiar una entidad
+npm run migration:run
+npm run migration:revert
 ```
 
 - Swagger: http://localhost:3000/docs
@@ -24,7 +37,8 @@ npm run start:dev
 | `WHATSAPP_APP_SECRET` | App Secret de tu app de Meta (para validar la firma) |
 | `WHATSAPP_TOKEN` | Token de acceso de la Cloud API |
 | `WHATSAPP_PHONE_NUMBER_ID` | ID del número de teléfono de prueba/real |
-| `WHATSAPP_API_VERSION` | Versión de la Graph API, ej. `v21.0` |
+| `WHATSAPP_API_VERSION` | Versión de la Graph API, ej. `v25.0` |
+| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Conexión a PostgreSQL (los de `.env.example` sirven para Docker local) |
 
 Nunca subas el `.env` (está en `.gitignore`).
 
@@ -43,3 +57,10 @@ Nunca subas el `.env` (está en `.gitignore`).
    - Tocá **Verificar y guardar** y suscribite al campo `messages`.
 4. Completá el `.env` (App Secret en Configuración > Básica; token y phone number ID en WhatsApp > Configuración de la API) y reiniciá el bot.
 5. Desde tu celular (agregado como número de prueba) mandá un mensaje al número de prueba: el bot responde `Eco: <tu mensaje>`.
+
+## Problemas comunes con Meta
+
+- **El bot no recibe mensajes reales (el botón "Probar" sí funciona):** la cuenta de WhatsApp tiene que estar suscrita a tu app. Se hace con `POST /{WABA_ID}/subscribed_apps` en la Graph API.
+- **Error 131030 "not in allowed list" con un número argentino:** Meta entrega `549...` pero la lista de destinatarios guarda `54...`. El bot ya le saca el 9 (`src/whatsapp/normalize-phone.ts`).
+- **Error 190 "Authentication Error":** el token temporal dura 24 hs. Generá uno nuevo en WhatsApp > Configuración de la API.
+- **Dejó de llegar todo:** el túnel gratis de Cloudflare se cayó o cambió de URL. Levantá uno nuevo y cargá la URL en Meta (Configurar webhooks).

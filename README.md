@@ -62,16 +62,16 @@ Nunca subas el `.env` (está en `.gitignore`).
 
 ## Agenda de turnos
 
-Horario: lunes a viernes, 9:00 a 18:00, turnos de 30 minutos, hora de Argentina (UTC-3). Se cambia en .
+Horario: lunes a viernes, 9:00 a 18:00, turnos de 30 minutos, hora de Argentina (UTC-3). Se cambia en `src/appointments/schedule.ts`.
 
 | Escribís | Qué hace |
 |---|---|
-|  | Muestra los comandos |
-|  | Próximos horarios libres |
-|  | Horarios libres de un día (también  y ) |
-|  | Reserva |
-|  | Lista tus turnos |
-|  | Cancela un turno |
+| `ayuda` | Muestra los comandos |
+| `disponibles` | Próximos horarios libres |
+| `disponibles 20/10` | Horarios libres de un día (también `hoy` y `mañana`) |
+| `turno 20/10 10:30` | Reserva |
+| `mis turnos` | Lista tus turnos |
+| `cancelar 20/10 10:30` | Cancela un turno |
 
 Un horario no puede tener dos turnos activos: lo garantiza un índice único en la base (solo cuenta los turnos no cancelados), así que dos reservas simultáneas no se pisan.
 

@@ -1,5 +1,6 @@
 import { Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ThinkingLevel } from '@google/genai';
 import { AppointmentsModule } from '../appointments/appointments.module';
 import { ContactsModule } from '../contacts/contacts.module';
 import { MessagesModule } from '../messages/messages.module';
@@ -7,7 +8,7 @@ import { AiService } from './ai.service';
 import { GeminiProvider } from './gemini.provider';
 import { LLM_PROVIDER } from './llm.types';
 
-const DEFAULT_MODEL = 'gemini-3.8-flash';
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 
 @Module({
   imports: [AppointmentsModule, ContactsModule, MessagesModule],
@@ -25,8 +26,11 @@ const DEFAULT_MODEL = 'gemini-3.8-flash';
           return null;
         }
         const model = config.get<string>('AI_MODEL') ?? DEFAULT_MODEL;
-        logger.log(`IA activada con Gemini (${model})`);
-        return new GeminiProvider(apiKey, model);
+        const thinking = (config.get<string>('AI_THINKING_LEVEL') ?? 'LOW').toUpperCase();
+        // 'NONE' lo omite, para modelos que no aceptan el parámetro.
+        const level = thinking === 'NONE' ? undefined : (thinking as ThinkingLevel);
+        logger.log(`IA activada con Gemini (${model}, pensamiento ${level ?? 'por defecto'})`);
+        return new GeminiProvider(apiKey, model, level);
       },
     },
   ],

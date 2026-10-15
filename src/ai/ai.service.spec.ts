@@ -204,12 +204,12 @@ describe('AiService', () => {
     expect(await service.reply(contact, 'quiero un turno', now)).toBeNull();
   });
 
-  it('si el modelo no contesta en 10 segundos, devuelve null', async () => {
+  it('si el modelo no contesta en 20 segundos, devuelve null', async () => {
     jest.useFakeTimers();
     try {
       provider.complete.mockReturnValue(new Promise(() => undefined));
       const pending = service.reply(contact, 'quiero un turno', now);
-      await jest.advanceTimersByTimeAsync(10_001);
+      await jest.advanceTimersByTimeAsync(20_001);
       expect(await pending).toBeNull();
     } finally {
       jest.useRealTimers();

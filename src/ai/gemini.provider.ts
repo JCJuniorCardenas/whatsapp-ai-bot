@@ -1,13 +1,24 @@
-import { Content, FunctionCallingConfigMode, GoogleGenAI, Part } from '@google/genai';
+import {
+  Content,
+  FunctionCallingConfigMode,
+  GoogleGenAI,
+  Part,
+  ThinkingLevel,
+} from '@google/genai';
 import { LlmMessage, LlmPart, LlmProvider, LlmRequest } from './llm.types';
 
 /** Adaptador de Gemini (SDK oficial @google/genai) a la interfaz neutral de la app. */
 export class GeminiProvider implements LlmProvider {
   private readonly ai: GoogleGenAI;
 
+  /**
+   * @param thinkingLevel cuánto "piensa" el modelo antes de responder (menos = más rápido).
+   *   Lo soportan los modelos Gemini 3; con otros, pasar undefined.
+   */
   constructor(
     apiKey: string,
     private readonly model: string,
+    private readonly thinkingLevel?: ThinkingLevel,
   ) {
     this.ai = new GoogleGenAI({ apiKey });
   }
@@ -19,6 +30,7 @@ export class GeminiProvider implements LlmProvider {
       config: {
         systemInstruction: request.system,
         maxOutputTokens: request.maxOutputTokens,
+        ...(this.thinkingLevel && { thinkingConfig: { thinkingLevel: this.thinkingLevel } }),
         tools: [
           {
             functionDeclarations: request.tools.map((t) => ({

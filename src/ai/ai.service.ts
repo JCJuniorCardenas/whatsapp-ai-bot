@@ -19,7 +19,7 @@ import { LLM_PROVIDER, LlmMessage, LlmPart, LlmProvider } from './llm.types';
 
 const MAX_INPUT_CHARS = 500;
 const MAX_STEPS = 4; // vueltas máximas al modelo por mensaje
-const TIMEOUT_MS = 10_000;
+const TIMEOUT_MS = 20_000;
 const HISTORY_MESSAGES = 10;
 const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -214,7 +214,7 @@ export class AiService {
       `Hoy es ${DAY_NAMES[t.dow]} ${two(t.d)}/${two(t.m)}/${t.y} (fecha ISO ${t.y}-${two(t.m)}-${two(t.d)}) y son las ${t.h}:${two(t.min)}, hora de Argentina.`,
       'Se atiende de lunes a viernes, de 9:00 a 18:00, con turnos de 30 minutos. No hay turnos los fines de semana.',
       'Reglas:',
-      '- Solo ayudás con turnos: ver horarios libres, reservar, ver los turnos propios y cancelarlos. Para cualquier otra cosa, decí amablemente que solo manejás turnos.',
+      '- Solo ayudás con turnos: ver horarios libres, reservar, ver los turnos propios y cancelarlos. Para cualquier otra cosa (preguntas generales, charla, otros temas) no respondas el contenido, ni siquiera brevemente: decí amablemente que solo manejás turnos y ofrecé ayuda con eso.',
       '- Nunca inventes horarios: consultá siempre get_availability.',
       '- Para reservar o cancelar usá request_booking o request_cancellation. Eso NO ejecuta la acción: el sistema le pide confirmación a la persona. No digas que ya quedó reservado o cancelado.',
       '- Convertí "mañana", "el martes", "a la tarde" en fechas y horas concretas con la fecha de hoy. "A la tarde" es desde las 13:00 y "a la mañana" hasta las 12:30.',

@@ -101,6 +101,44 @@ describe('AppointmentsService', () => {
     });
   });
 
+  describe('assertBookable', () => {
+    const slot = fromLocal(2026, 10, 20, 10, 30);
+
+    it('no lanza si el horario está libre y no reserva nada', async () => {
+      repo.findOne.mockResolvedValue(null);
+      await expect(service.assertBookable(slot, now)).resolves.toBeUndefined();
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+
+    it('TAKEN si ya hay un turno activo', async () => {
+      repo.findOne.mockResolvedValue({ id: 'a1' });
+      await expect(service.assertBookable(slot, now)).rejects.toMatchObject({ code: 'TAKEN' });
+    });
+
+    it('aplica las mismas reglas de horario que book', async () => {
+      await expect(
+        service.assertBookable(fromLocal(2026, 10, 24, 10, 0), now),
+      ).rejects.toMatchObject({ code: 'OUTSIDE_HOURS' });
+    });
+  });
+
+  describe('assertCancellable', () => {
+    const slot = fromLocal(2026, 10, 20, 10, 30);
+
+    it('no lanza si el turno es de esa persona y es futuro', async () => {
+      repo.findOne.mockResolvedValue({ startsAt: slot });
+      await expect(service.assertCancellable(contact, slot, now)).resolves.toBeUndefined();
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+
+    it('NOT_FOUND si no existe', async () => {
+      repo.findOne.mockResolvedValue(null);
+      await expect(service.assertCancellable(contact, slot, now)).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+    });
+  });
+
   describe('cancel', () => {
     const slot = fromLocal(2026, 10, 20, 10, 30);
 

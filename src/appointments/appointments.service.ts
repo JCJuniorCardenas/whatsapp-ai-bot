@@ -65,12 +65,34 @@ export class AppointmentsService {
     return result;
   }
 
-  async book(contact: Contact, startsAt: Date, now = new Date()): Promise<Appointment> {
+  /** Reglas de horario que no necesitan la base. Lanza AppointmentError si no cumple. */
+  private checkSlot(startsAt: Date, now: Date): void {
     if (startsAt <= now) throw new AppointmentError('PAST');
     if (startsAt.getTime() > now.getTime() + MAX_DAYS_AHEAD * DAY_MS) {
       throw new AppointmentError('TOO_FAR');
     }
     if (!isValidSlot(startsAt)) throw new AppointmentError('OUTSIDE_HOURS');
+  }
+
+  /** ¿Se podría reservar ese horario ahora? No reserva nada: sirve para avisar antes de pedir confirmación. */
+  async assertBookable(startsAt: Date, now = new Date()): Promise<void> {
+    this.checkSlot(startsAt, now);
+    const taken = await this.repo.findOne({
+      where: { startsAt, status: Not('cancelled') },
+    });
+    if (taken) throw new AppointmentError('TAKEN');
+  }
+
+  /** ¿Tiene esa persona un turno futuro en ese horario? No cancela nada. */
+  async assertCancellable(contact: Contact, startsAt: Date, now = new Date()): Promise<void> {
+    const found = await this.repo.findOne({
+      where: { contact: { id: contact.id }, startsAt, status: Not('cancelled') },
+    });
+    if (!found || found.startsAt <= now) throw new AppointmentError('NOT_FOUND');
+  }
+
+  async book(contact: Contact, startsAt: Date, now = new Date()): Promise<Appointment> {
+    this.checkSlot(startsAt, now);
     try {
       return await this.repo.save(
         this.repo.create({ contact, startsAt, status: 'confirmed' }),

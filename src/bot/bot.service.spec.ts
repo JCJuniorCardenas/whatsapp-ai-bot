@@ -111,6 +111,13 @@ describe('BotService', () => {
       expect(text).toBe('Tengo lugar el martes a las 15:00');
     });
 
+    it('un comando mal escrito también lo intenta entender la IA', async () => {
+      ai.reply.mockResolvedValue('¿Qué día del martes? Decime la fecha y te busco lugar.');
+      const text = await bot.reply(contact, 'turno el martes a las 9:15', now);
+      expect(ai.reply).toHaveBeenCalled();
+      expect(text).toContain('¿Qué día del martes?');
+    });
+
     it('si la IA no está o falla, manda a la ayuda', async () => {
       ai.reply.mockResolvedValue(null);
       expect(await bot.reply(contact, 'quiero pizza', now)).toContain('*ayuda*');

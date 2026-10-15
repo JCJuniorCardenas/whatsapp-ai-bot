@@ -52,14 +52,17 @@ export class BotService {
 
       // 2) Comandos exactos: gratis, instantáneos y sin ambigüedad.
       const command = parseCommand(text, now);
-      if (command.type !== 'unknown') {
+      if (command.type !== 'unknown' && command.type !== 'invalid') {
         if (pending) await this.contacts.clearPending(contact);
         return await this.run(contact, command, now);
       }
 
-      // 3) Frase libre: la entiende la IA (si está activada).
+      // 3) Frase libre (o un comando mal escrito): la entiende la IA, si está activada.
       const aiReply = await this.ai.reply(contact, text, now, pending);
-      return aiReply ?? `No entendí 🤔 ${COMMAND_HINT}`;
+      if (aiReply) return aiReply;
+      return command.type === 'invalid'
+        ? `Me faltó algún dato. Probá así: *${command.usage}*`
+        : `No entendí 🤔 ${COMMAND_HINT}`;
     } catch (err) {
       if (err instanceof AppointmentError) return APPOINTMENT_ERROR_MESSAGES[err.code];
       throw err;

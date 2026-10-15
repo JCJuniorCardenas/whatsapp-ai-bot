@@ -7,6 +7,7 @@ import { MessagesService } from './messages.service';
 describe('MessagesService', () => {
   let service: MessagesService;
   const repo = {
+    find: jest.fn(),
     existsBy: jest.fn(),
     create: jest.fn((d) => d),
     save: jest.fn(async (m) => m),
@@ -34,6 +35,13 @@ describe('MessagesService', () => {
     repo.existsBy.mockResolvedValue(true);
     expect(await service.saveIncoming(contact, 'wamid.1', 'hola')).toBeNull();
     expect(repo.save).not.toHaveBeenCalled();
+  });
+
+  it('recent devuelve los mensajes del más viejo al más nuevo', async () => {
+    repo.find.mockResolvedValue([{ body: 'tercero' }, { body: 'segundo' }, { body: 'primero' }]);
+    const list = await service.recent(contact, new Date('2026-10-14T00:00:00Z'), 3);
+    expect(list.map((m) => m.body)).toEqual(['primero', 'segundo', 'tercero']);
+    expect(repo.find).toHaveBeenCalledWith(expect.objectContaining({ take: 3, order: { createdAt: 'DESC' } }));
   });
 
   it('guarda un mensaje saliente', async () => {

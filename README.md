@@ -2,7 +2,7 @@
 
 Bot de WhatsApp para agendar turnos. **Fase 1:** webhook de Meta + eco del mensaje (sin IA ni base de datos todavía).
 
-Stack: NestJS, TypeScript, PostgreSQL con TypeORM, Swagger, Jest. (El deploy en Render viene en una próxima fase.)
+Stack: NestJS, TypeScript, PostgreSQL con TypeORM, Swagger, Jest. Deploy en Railway.
 
 **Fase 2:** se guardan contactos y mensajes en PostgreSQL y se ignoran los reintentos de Meta (no se responde dos veces al mismo mensaje).
 
@@ -57,6 +57,16 @@ Nunca subas el `.env` (está en `.gitignore`).
    - Tocá **Verificar y guardar** y suscribite al campo `messages`.
 4. Completá el `.env` (App Secret en Configuración > Básica; token y phone number ID en WhatsApp > Configuración de la API) y reiniciá el bot.
 5. Desde tu celular (agregado como número de prueba) mandá un mensaje al número de prueba: el bot responde `Eco: <tu mensaje>`.
+
+## Deploy en Railway
+
+1. Subí el repo a GitHub y en [railway.app](https://railway.com) creá un proyecto con **Deploy from GitHub repo**.
+2. En el mismo proyecto agregá una base: **New > Database > PostgreSQL**.
+3. En el servicio del bot, pestaña **Variables**:
+   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (referencia a la base; sin SSL porque es red interna)
+   - `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_API_VERSION`
+4. **Settings > Networking > Generate Domain** y usá `https://TU-DOMINIO/webhook` como URL en Meta.
+5. El chequeo de salud es `/health` y las migraciones se aplican solas al arrancar (ver `railway.json`).
 
 ## Problemas comunes con Meta
 

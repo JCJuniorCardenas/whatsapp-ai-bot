@@ -4,6 +4,8 @@ Bot de WhatsApp para agendar turnos. **Fase 1:** webhook de Meta + eco del mensa
 
 Stack: NestJS, TypeScript, PostgreSQL con TypeORM, Swagger, Jest. Deploy en Railway.
 
+**Fase 3 (agenda):** el bot entiende comandos y maneja turnos (ver abajo).
+
 **Fase 2:** se guardan contactos y mensajes en PostgreSQL y se ignoran los reintentos de Meta (no se responde dos veces al mismo mensaje).
 
 ## Cómo correrlo
@@ -57,6 +59,21 @@ Nunca subas el `.env` (está en `.gitignore`).
    - Tocá **Verificar y guardar** y suscribite al campo `messages`.
 4. Completá el `.env` (App Secret en Configuración > Básica; token y phone number ID en WhatsApp > Configuración de la API) y reiniciá el bot.
 5. Desde tu celular (agregado como número de prueba) mandá un mensaje al número de prueba: el bot responde `Eco: <tu mensaje>`.
+
+## Agenda de turnos
+
+Horario: lunes a viernes, 9:00 a 18:00, turnos de 30 minutos, hora de Argentina (UTC-3). Se cambia en .
+
+| Escribís | Qué hace |
+|---|---|
+|  | Muestra los comandos |
+|  | Próximos horarios libres |
+|  | Horarios libres de un día (también  y ) |
+|  | Reserva |
+|  | Lista tus turnos |
+|  | Cancela un turno |
+
+Un horario no puede tener dos turnos activos: lo garantiza un índice único en la base (solo cuenta los turnos no cancelados), así que dos reservas simultáneas no se pisan.
 
 ## Deploy en Railway
 

@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { createHmac } from 'crypto';
 import request from 'supertest';
+import { BotService } from '../bot/bot.service';
 import { ContactsService } from '../contacts/contacts.service';
 import { MessagesService } from '../messages/messages.service';
 import { SignatureGuard } from './signature.guard';
@@ -43,11 +44,13 @@ describe('Webhook de WhatsApp', () => {
   let fetchMock: jest.Mock;
   const contacts = { findOrCreate: jest.fn() };
   const messages = { saveIncoming: jest.fn(), saveOutgoing: jest.fn() };
+  const bot = { reply: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     contacts.findOrCreate.mockResolvedValue({ id: 'c1', phone: '5491100000000' });
     messages.saveIncoming.mockResolvedValue({ id: 'm1' });
+    bot.reply.mockResolvedValue('respuesta del bot');
     fetchMock = jest.fn().mockResolvedValue({
       ok: true,
       text: async () => '',
@@ -65,6 +68,7 @@ describe('Webhook de WhatsApp', () => {
         SignatureGuard,
         { provide: ContactsService, useValue: contacts },
         { provide: MessagesService, useValue: messages },
+        { provide: BotService, useValue: bot },
       ],
     }).compile();
     app = moduleRef.createNestApplication({ rawBody: true });
@@ -117,7 +121,7 @@ describe('Webhook de WhatsApp', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('con firma válida responde el eco por la Graph API', async () => {
+    it('con firma válida responde lo que decide el bot por la Graph API', async () => {
       const body = JSON.stringify(payload);
       await request(app.getHttpServer())
         .post('/webhook')
@@ -130,11 +134,12 @@ describe('Webhook de WhatsApp', () => {
       const [url, init] = fetchMock.mock.calls[0];
       expect(url).toBe('https://graph.facebook.com/v21.0/12345/messages');
       expect(init.headers.Authorization).toBe('Bearer token-graph');
+      expect(bot.reply).toHaveBeenCalledWith(expect.anything(), 'hola');
       expect(messages.saveIncoming).toHaveBeenCalledWith(expect.anything(), 'm1', 'hola');
-      expect(messages.saveOutgoing).toHaveBeenCalledWith(expect.anything(), 'Eco: hola', 'wamid.out');
+      expect(messages.saveOutgoing).toHaveBeenCalledWith(expect.anything(), 'respuesta del bot', 'wamid.out');
       expect(JSON.parse(init.body)).toMatchObject({
         to: '541100000000', // se saca el 9 de los celulares argentinos
-        text: { body: 'Eco: hola' },
+        text: { body: 'respuesta del bot' },
       });
     });
   });

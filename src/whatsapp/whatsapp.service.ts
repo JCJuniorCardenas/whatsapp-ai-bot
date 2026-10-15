@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BotService } from '../bot/bot.service';
 import { ContactsService } from '../contacts/contacts.service';
 import { MessagesService } from '../messages/messages.service';
 import { normalizeRecipient } from './normalize-phone';
@@ -13,6 +14,7 @@ export class WhatsappService {
     private readonly config: ConfigService,
     private readonly contacts: ContactsService,
     private readonly messages: MessagesService,
+    private readonly bot: BotService,
   ) {}
 
   /** Envía un mensaje de texto por la Graph API. Devuelve el ID del mensaje en WhatsApp. */
@@ -45,7 +47,7 @@ export class WhatsappService {
     return data.messages?.[0]?.id ?? null;
   }
 
-  /** Guarda cada mensaje de texto y responde un eco (una sola vez por mensaje). */
+  /** Guarda cada mensaje de texto y le responde lo que decida el bot (una sola vez por mensaje). */
   async handleIncoming(payload: WhatsappWebhookPayload): Promise<void> {
     for (const entry of payload.entry ?? []) {
       for (const change of entry.changes ?? []) {
@@ -69,10 +71,10 @@ export class WhatsappService {
               this.logger.warn(`Mensaje ${message.id} repetido, se ignora`);
               continue;
             }
-            const reply = `Eco: ${message.text.body}`;
+            const reply = await this.bot.reply(contact, message.text.body);
             const waId = await this.sendTextMessage(message.from, reply);
             await this.messages.saveOutgoing(contact, reply, waId);
-            this.logger.log(`Eco enviado a ${message.from}`);
+            this.logger.log(`Respuesta enviada a ${message.from}`);
           } catch (err) {
             // No tiramos el error: si el webhook devuelve 500, Meta reintenta y duplica mensajes.
             this.logger.error(`No se pudo procesar el mensaje de ${message.from}`, err);

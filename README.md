@@ -75,6 +75,23 @@ Horario: lunes a viernes, 9:00 a 18:00, turnos de 30 minutos, hora de Argentina 
 
 Un horario no puede tener dos turnos activos: lo garantiza un índice único en la base (solo cuenta los turnos no cancelados), así que dos reservas simultáneas no se pisan.
 
+## IA con Gemini (opcional)
+
+Si escribís algo que no es un comando ("quiero un turno el martes a la tarde"), lo interpreta Gemini. Sin `GEMINI_API_KEY` la IA queda apagada y el bot sigue andando con los comandos.
+
+Cómo está pensado:
+
+- **Los comandos exactos no usan IA:** son gratis, instantáneos y sin ambigüedad.
+- **La IA propone, el código decide:** el modelo solo tiene 4 herramientas (ver horarios, pedir reserva, ver mis turnos, pedir cancelación). Todas pasan por las mismas reglas de `AppointmentsService`.
+- **Reservar y cancelar piden confirmación forzada por el código:** el bot guarda la acción 10 minutos y solo la ejecuta con un "sí" exacto. La pregunta de confirmación la arma el código, no el modelo.
+- **El modelo nunca elige a quién afecta una acción:** todo se hace sobre el contacto que escribe.
+- **Límites:** 500 caracteres de entrada, 20 consultas por persona por día (`AI_DAILY_LIMIT`), 20 segundos de espera y 4 vueltas máximas. Si la IA falla, responde como sin ella.
+- **Proveedor intercambiable:** el resto de la app usa la interfaz `LlmProvider` (`src/ai/llm.types.ts`); Gemini es un adaptador (`src/ai/gemini.provider.ts`).
+
+Variables: `GEMINI_API_KEY` (gratis en aistudio.google.com/apikey), `AI_MODEL`, `AI_THINKING_LEVEL` y `AI_DAILY_LIMIT`.
+
+> En el plan gratis de Gemini, Google puede usar lo que se le envía para mejorar sus productos. Al modelo solo le llegan frases sobre turnos, nunca teléfonos. Los modelos disponibles gratis y sus límites cambian: se ven en Google AI Studio.
+
 ## Deploy en Railway
 
 1. Subí el repo a GitHub y en [railway.app](https://railway.com) creá un proyecto con **Deploy from GitHub repo**.

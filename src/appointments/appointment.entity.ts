@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
@@ -9,8 +10,10 @@ import { Contact } from '../contacts/contact.entity';
 
 export type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled';
 
-// Solo el esquema: la lógica de agenda llega en una fase posterior.
+// Un horario solo puede tener un turno activo. Los cancelados no cuentan, así el horario se libera.
+// Es el candado real contra dos personas reservando a la vez: lo garantiza la base, no el código.
 @Entity('appointments')
+@Index(['startsAt'], { unique: true, where: `"status" <> 'cancelled'` })
 export class Appointment {
   @PrimaryGeneratedColumn('uuid')
   id: string;

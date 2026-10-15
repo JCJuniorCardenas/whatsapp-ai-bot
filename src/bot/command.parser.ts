@@ -65,6 +65,17 @@ function parseDayAndTime(args: string[], now: Date): Date | null {
   return fromLocal(day.y, day.m, day.d, time.h, time.min);
 }
 
+const YES = ['si', 'sii', 'siii', 'sip', 'dale', 'ok', 'okey', 'oka', 'confirmo', 'confirmar', 'listo', 'joya', 'de una', 'si confirmo', 'si dale'];
+const NO = ['no', 'nop', 'nope', 'no gracias', 'mejor no', 'no confirmo'];
+
+/** "sí" o "no" a una pregunta de confirmación. Solo mensajes cortos y exactos: ante la duda, null. */
+export function parseConfirmation(text: string): 'yes' | 'no' | null {
+  const clean = normalize(text).replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+  if (YES.includes(clean)) return 'yes';
+  if (NO.includes(clean)) return 'no';
+  return null;
+}
+
 export function parseCommand(text: string, now = new Date()): Command {
   const [word, ...args] = normalize(text).split(' ');
 

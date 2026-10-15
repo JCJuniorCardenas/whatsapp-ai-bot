@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { AiService } from '../ai/ai.service';
+import { APPOINTMENT_ERROR_MESSAGES } from '../appointments/appointment-messages';
 import { AppointmentError, AppointmentsService } from '../appointments/appointments.service';
 import {
   CLOSE_HOUR,
@@ -6,13 +8,13 @@ import {
   formatSlot,
   formatTime,
   LocalDate,
-  MAX_DAYS_AHEAD,
   OPEN_HOUR,
   slotsOfDay,
   toLocalParts,
 } from '../appointments/schedule';
-import { Contact } from '../contacts/contact.entity';
-import { Command, parseCommand } from './command.parser';
+import { Contact, PendingAction } from '../contacts/contact.entity';
+import { ContactsService } from '../contacts/contacts.service';
+import { Command, parseCommand, parseConfirmation } from './command.parser';
 
 const HELP = [
   'Hola 👋 Soy el bot de turnos.',
@@ -23,31 +25,59 @@ const HELP = [
   '• *turno 20/10 10:30*: reservar',
   '• *mis turnos*: ver tus turnos',
   '• *cancelar 20/10 10:30*: cancelar un turno',
+  '',
+  'También podés escribirme con tus palabras, por ejemplo: "quiero un turno el martes a la tarde".',
 ].join('\n');
 
 const COMMAND_HINT = 'Escribí *ayuda* para ver qué puedo hacer.';
 
-const ERROR_MESSAGES: Record<AppointmentError['code'], string> = {
-  PAST: 'Ese horario ya pasó. Mirá los libres con *disponibles*.',
-  TOO_FAR: `Solo se pueden reservar turnos hasta ${MAX_DAYS_AHEAD} días adelante.`,
-  OUTSIDE_HOURS: `Ese horario no es válido. Atendemos de lunes a viernes, de ${OPEN_HOUR}:00 a ${CLOSE_HOUR}:00, cada 30 minutos. Mirá los libres con *disponibles*.`,
-  TAKEN: '😕 Ese horario ya fue tomado. Mirá otros con *disponibles*.',
-  NOT_FOUND: 'No encontré un turno tuyo en ese horario. Mirá los tuyos con *mis turnos*.',
-};
-
 @Injectable()
 export class BotService {
-  constructor(private readonly appointments: AppointmentsService) {}
+  constructor(
+    private readonly appointments: AppointmentsService,
+    private readonly contacts: ContactsService,
+    private readonly ai: AiService,
+  ) {}
 
   /** Devuelve el texto con el que hay que responderle a esa persona. */
   async reply(contact: Contact, text: string, now = new Date()): Promise<string> {
-    const command = parseCommand(text, now);
     try {
-      return await this.run(contact, command, now);
+      const pending = this.contacts.getPending(contact, now);
+
+      // 1) Si hay algo esperando confirmación, un "sí" o "no" se resuelve acá, sin IA.
+      if (pending) {
+        const answer = parseConfirmation(text);
+        if (answer) return await this.resolvePending(contact, pending, answer === 'yes', now);
+      }
+
+      // 2) Comandos exactos: gratis, instantáneos y sin ambigüedad.
+      const command = parseCommand(text, now);
+      if (command.type !== 'unknown') {
+        if (pending) await this.contacts.clearPending(contact);
+        return await this.run(contact, command, now);
+      }
+
+      // 3) Frase libre: la entiende la IA (si está activada).
+      const aiReply = await this.ai.reply(contact, text, now, pending);
+      return aiReply ?? `No entendí 🤔 ${COMMAND_HINT}`;
     } catch (err) {
-      if (err instanceof AppointmentError) return ERROR_MESSAGES[err.code];
+      if (err instanceof AppointmentError) return APPOINTMENT_ERROR_MESSAGES[err.code];
       throw err;
     }
+  }
+
+  private async resolvePending(
+    contact: Contact,
+    pending: PendingAction,
+    confirmed: boolean,
+    now: Date,
+  ): Promise<string> {
+    await this.contacts.clearPending(contact);
+    if (!confirmed) return 'Listo, no hice nada. Si querés otra cosa, escribime. 🙂';
+    const startsAt = new Date(pending.startsAt);
+    return pending.type === 'book'
+      ? this.run(contact, { type: 'book', startsAt }, now)
+      : this.run(contact, { type: 'cancel', startsAt }, now);
   }
 
   private async run(contact: Contact, command: Command, now: Date): Promise<string> {

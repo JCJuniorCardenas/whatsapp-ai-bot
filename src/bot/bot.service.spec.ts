@@ -1,7 +1,9 @@
 import { Test } from '@nestjs/testing';
+import { AiService } from '../ai/ai.service';
 import { AppointmentError, AppointmentsService } from '../appointments/appointments.service';
 import { fromLocal } from '../appointments/schedule';
 import { Contact } from '../contacts/contact.entity';
+import { ContactsService } from '../contacts/contacts.service';
 import { BotService } from './bot.service';
 
 describe('BotService', () => {
@@ -13,6 +15,8 @@ describe('BotService', () => {
     upcoming: jest.fn(),
     cancel: jest.fn(),
   };
+  const contacts = { getPending: jest.fn(), clearPending: jest.fn() };
+  const ai = { reply: jest.fn() };
   const contact = { id: 'c1' } as Contact;
   // Jueves 15/10/2026 12:00 hora argentina
   const now = fromLocal(2026, 10, 15, 12, 0);
@@ -20,8 +24,15 @@ describe('BotService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    contacts.getPending.mockReturnValue(null);
+    ai.reply.mockResolvedValue(null);
     const moduleRef = await Test.createTestingModule({
-      providers: [BotService, { provide: AppointmentsService, useValue: appointments }],
+      providers: [
+        BotService,
+        { provide: AppointmentsService, useValue: appointments },
+        { provide: ContactsService, useValue: contacts },
+        { provide: AiService, useValue: ai },
+      ],
     }).compile();
     bot = moduleRef.get(BotService);
   });
@@ -81,13 +92,83 @@ describe('BotService', () => {
     expect(await bot.reply(contact, 'turno', now)).toContain('*turno 20/10 10:30*');
   });
 
-  it('si no entiende, manda a la ayuda', async () => {
-    expect(await bot.reply(contact, 'quiero pizza', now)).toContain('*ayuda*');
-  });
-
   it('un error inesperado no se disfraza: se propaga', async () => {
     const boom = new Error('se cayó la base');
     appointments.book.mockRejectedValue(boom);
     await expect(bot.reply(contact, 'turno 20/10 10:30', now)).rejects.toBe(boom);
+  });
+
+  describe('frases libres (IA)', () => {
+    it('un comando exacto no gasta IA', async () => {
+      await bot.reply(contact, 'ayuda', now);
+      expect(ai.reply).not.toHaveBeenCalled();
+    });
+
+    it('lo que no es un comando va a la IA y se responde lo que ella diga', async () => {
+      ai.reply.mockResolvedValue('Tengo lugar el martes a las 15:00');
+      const text = await bot.reply(contact, 'quiero algo el martes a la tarde', now);
+      expect(ai.reply).toHaveBeenCalledWith(contact, 'quiero algo el martes a la tarde', now, null);
+      expect(text).toBe('Tengo lugar el martes a las 15:00');
+    });
+
+    it('si la IA no está o falla, manda a la ayuda', async () => {
+      ai.reply.mockResolvedValue(null);
+      expect(await bot.reply(contact, 'quiero pizza', now)).toContain('*ayuda*');
+    });
+  });
+
+  describe('confirmación de una acción pendiente', () => {
+    const bookPending = { type: 'book' as const, startsAt: slot.toISOString() };
+
+    it('con un "sí" ejecuta la reserva pendiente, sin pasar por la IA', async () => {
+      contacts.getPending.mockReturnValue(bookPending);
+      appointments.book.mockResolvedValue({ startsAt: slot });
+      const text = await bot.reply(contact, 'Sí', now);
+      expect(contacts.clearPending).toHaveBeenCalledWith(contact);
+      expect(appointments.book).toHaveBeenCalledWith(contact, slot, now);
+      expect(text).toContain('quedó reservado');
+      expect(ai.reply).not.toHaveBeenCalled();
+    });
+
+    it('con un "no" descarta la acción y no hace nada', async () => {
+      contacts.getPending.mockReturnValue(bookPending);
+      const text = await bot.reply(contact, 'no', now);
+      expect(contacts.clearPending).toHaveBeenCalledWith(contact);
+      expect(appointments.book).not.toHaveBeenCalled();
+      expect(text).toContain('no hice nada');
+    });
+
+    it('ejecuta una cancelación pendiente al confirmar', async () => {
+      contacts.getPending.mockReturnValue({ type: 'cancel', startsAt: slot.toISOString() });
+      appointments.cancel.mockResolvedValue({ startsAt: slot });
+      expect(await bot.reply(contact, 'dale', now)).toContain('cancelé tu turno');
+    });
+
+    it('si entre el pedido y el "sí" otro tomó el horario, se avisa', async () => {
+      contacts.getPending.mockReturnValue(bookPending);
+      appointments.book.mockRejectedValue(new AppointmentError('TAKEN'));
+      expect(await bot.reply(contact, 'sí', now)).toContain('ya fue tomado');
+    });
+
+    it('un "sí" sin nada pendiente no ejecuta nada', async () => {
+      contacts.getPending.mockReturnValue(null);
+      await bot.reply(contact, 'sí', now);
+      expect(appointments.book).not.toHaveBeenCalled();
+      expect(appointments.cancel).not.toHaveBeenCalled();
+    });
+
+    it('un comando nuevo reemplaza lo pendiente', async () => {
+      contacts.getPending.mockReturnValue(bookPending);
+      await bot.reply(contact, 'ayuda', now);
+      expect(contacts.clearPending).toHaveBeenCalledWith(contact);
+      expect(appointments.book).not.toHaveBeenCalled();
+    });
+
+    it('otra frase libre con algo pendiente va a la IA avisándole lo pendiente', async () => {
+      contacts.getPending.mockReturnValue(bookPending);
+      ai.reply.mockResolvedValue('Claro, ¿qué día?');
+      await bot.reply(contact, 'mejor otro día', now);
+      expect(ai.reply).toHaveBeenCalledWith(contact, 'mejor otro día', now, bookPending);
+    });
   });
 });

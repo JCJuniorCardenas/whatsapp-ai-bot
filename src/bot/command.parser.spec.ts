@@ -1,5 +1,5 @@
 import { fromLocal } from '../appointments/schedule';
-import { parseCommand, parseDay, parseTime } from './command.parser';
+import { parseCommand, parseConfirmation, parseDay, parseTime } from './command.parser';
 
 // Jueves 15/10/2026 12:00 hora argentina
 const now = fromLocal(2026, 10, 15, 12, 0);
@@ -94,5 +94,19 @@ describe('parseCommand', () => {
   it('lo que no entiende es unknown', () => {
     expect(parseCommand('quiero pizza', now)).toEqual({ type: 'unknown' });
     expect(parseCommand('', now)).toEqual({ type: 'unknown' });
+  });
+});
+
+describe('parseConfirmation', () => {
+  it.each(['sí', 'Si', 'SÍ!', 'dale', 'ok', 'Confirmo', 'de una', 'si confirmo'])('%s es sí', (t) => {
+    expect(parseConfirmation(t)).toBe('yes');
+  });
+
+  it.each(['no', 'No.', 'mejor no', 'no gracias'])('%s es no', (t) => {
+    expect(parseConfirmation(t)).toBe('no');
+  });
+
+  it.each(['si pero a las 4', 'no sé', 'turno 20/10 10:30', 'quizás', ''])('%s no es ni sí ni no', (t) => {
+    expect(parseConfirmation(t)).toBeNull();
   });
 });

@@ -90,10 +90,12 @@ Cómo está pensado:
 - **La IA propone, el código decide:** el modelo solo tiene 4 herramientas (ver horarios, pedir reserva, ver mis turnos, pedir cancelación). Todas pasan por las mismas reglas de `AppointmentsService`.
 - **Reservar y cancelar piden confirmación forzada por el código:** el bot guarda la acción 10 minutos y solo la ejecuta con un "sí" exacto. La pregunta de confirmación la arma el código, no el modelo.
 - **El modelo nunca elige a quién afecta una acción:** todo se hace sobre el contacto que escribe.
-- **Límites:** 500 caracteres de entrada, 20 consultas por persona por día (`AI_DAILY_LIMIT`), 20 segundos de espera y 4 vueltas máximas. Si la IA falla, responde como sin ella.
+- **Límites:** 500 caracteres de entrada, 20 consultas por persona por día (`AI_DAILY_LIMIT`) y 4 vueltas máximas al modelo. Si la IA falla, responde como sin ella.
+- **Modelo de respaldo:** si el principal falla (saturado, sin cuota) o no contesta en 12 s, la consulta se repite **desde cero** con el de respaldo (20 s). No se le pasan datos internos del primero, que no son intercambiables entre modelos.
+- **La confirmación se guarda recién al preguntar:** una reserva pedida por el modelo queda pendiente solo cuando la persona recibe la pregunta "¿Confirmo…?". Si la IA falla a mitad de camino, no queda nada que un "sí" suelto pueda ejecutar.
 - **Proveedor intercambiable:** el resto de la app usa la interfaz `LlmProvider` (`src/ai/llm.types.ts`); Gemini es un adaptador (`src/ai/gemini.provider.ts`).
 
-Variables: `GEMINI_API_KEY` (gratis en aistudio.google.com/apikey), `AI_MODEL`, `AI_THINKING_LEVEL` y `AI_DAILY_LIMIT`.
+Variables: `GEMINI_API_KEY` (gratis en aistudio.google.com/apikey), `AI_MODEL`, `AI_FALLBACK_MODEL` (`none` lo desactiva), `AI_PRIMARY_TIMEOUT_MS`, `AI_TIMEOUT_MS`, `AI_THINKING_LEVEL` y `AI_DAILY_LIMIT`.
 
 > En el plan gratis de Gemini, Google puede usar lo que se le envía para mejorar sus productos. Al modelo solo le llegan frases sobre turnos, nunca teléfonos. Los modelos disponibles gratis y sus límites cambian: se ven en Google AI Studio.
 

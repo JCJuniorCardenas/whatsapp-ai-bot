@@ -1,14 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { AiService } from '../ai/ai.service';
-import { APPOINTMENT_ERROR_MESSAGES } from '../appointments/appointment-messages';
+import { appointmentErrorMessage } from '../appointments/appointment-messages';
 import { AppointmentError, AppointmentsService } from '../appointments/appointments.service';
 import {
-  CLOSE_HOUR,
+  describeDays,
+  describeSchedule,
   formatDay,
   formatSlot,
   formatTime,
+  getScheduleConfig,
   LocalDate,
-  OPEN_HOUR,
   slotsOfDay,
   toLocalParts,
 } from '../appointments/schedule';
@@ -16,18 +17,22 @@ import { Contact, PendingAction } from '../contacts/contact.entity';
 import { ContactsService } from '../contacts/contacts.service';
 import { Command, parseCommand, parseConfirmation } from './command.parser';
 
-const HELP = [
-  'Hola 👋 Soy el bot de turnos.',
-  `Atendemos de lunes a viernes de ${OPEN_HOUR}:00 a ${CLOSE_HOUR}:00, turnos de 30 minutos.`,
-  '',
-  '• *disponibles*: ver los próximos horarios libres',
-  '• *disponibles 20/10*: horarios libres de un día',
-  '• *turno 20/10 10:30*: reservar',
-  '• *mis turnos*: ver tus turnos',
-  '• *cancelar 20/10 10:30*: cancelar un turno',
-  '',
-  'También podés escribirme con tus palabras, por ejemplo: "quiero un turno el martes a la tarde".',
-].join('\n');
+/** La ayuda se arma en cada uso para reflejar el horario y el nombre del negocio vigentes. */
+function helpText(): string {
+  const business = process.env.BUSINESS_NAME?.trim();
+  return [
+    `Hola 👋 Soy el bot de turnos${business ? ` de ${business}` : ''}.`,
+    `Atendemos ${describeSchedule()}.`,
+    '',
+    '• *disponibles*: ver los próximos horarios libres',
+    '• *disponibles 20/10*: horarios libres de un día',
+    '• *turno 20/10 10:30*: reservar',
+    '• *mis turnos*: ver tus turnos',
+    '• *cancelar 20/10 10:30*: cancelar un turno',
+    '',
+    'También podés escribirme con tus palabras, por ejemplo: "quiero un turno el martes a la tarde".',
+  ].join('\n');
+}
 
 const COMMAND_HINT = 'Escribí *ayuda* para ver qué puedo hacer.';
 
@@ -64,7 +69,7 @@ export class BotService {
         ? `Me faltó algún dato. Probá así: *${command.usage}*`
         : `No entendí 🤔 ${COMMAND_HINT}`;
     } catch (err) {
-      if (err instanceof AppointmentError) return APPOINTMENT_ERROR_MESSAGES[err.code];
+      if (err instanceof AppointmentError) return appointmentErrorMessage(err.code);
       throw err;
     }
   }
@@ -86,7 +91,7 @@ export class BotService {
   private async run(contact: Contact, command: Command, now: Date): Promise<string> {
     switch (command.type) {
       case 'help':
-        return HELP;
+        return helpText();
       case 'availability':
         return command.day
           ? this.availabilityOfDay(command.day, now)
@@ -120,7 +125,7 @@ export class BotService {
 
   private async availabilityOfDay(day: LocalDate, now: Date): Promise<string> {
     if (slotsOfDay(day).length === 0) {
-      return `El ${formatDay(day)} no atendemos. Atendemos de lunes a viernes.`;
+      return `El ${formatDay(day)} no atendemos. Atendemos ${describeDays(getScheduleConfig().workDays)}.`;
     }
     const slots = await this.appointments.freeSlots(day, now);
     if (slots.length === 0) return `No quedan turnos libres el ${formatDay(day)}.`;

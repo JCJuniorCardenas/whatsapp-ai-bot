@@ -28,7 +28,7 @@ export const AI_TOOLS: LlmTool[] = [
       type: 'object',
       properties: {
         date: { type: 'string', description: 'Fecha YYYY-MM-DD.' },
-        time: { type: 'string', description: 'Hora HH:MM (24 hs), múltiplo de 30 minutos.' },
+        time: { type: 'string', description: 'Hora HH:MM (24 hs), un horario de turno válido según el horario de atención.' },
       },
       required: ['date', 'time'],
     },

@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { APPOINTMENT_ERROR_MESSAGES } from '../appointments/appointment-messages';
+import { appointmentErrorMessage } from '../appointments/appointment-messages';
 import { AppointmentError, AppointmentsService } from '../appointments/appointments.service';
 import {
+  describeSchedule,
   formatSlot,
   formatTime,
   fromLocal,
@@ -201,7 +202,7 @@ export class AiService {
     } catch (err) {
       // Un error de reglas de turnos se le cuenta al modelo para que se lo explique a la persona.
       if (err instanceof AppointmentError) {
-        return { result: { error: err.code, message: APPOINTMENT_ERROR_MESSAGES[err.code] } };
+        return { result: { error: err.code, message: appointmentErrorMessage(err.code) } };
       }
       throw err;
     }
@@ -212,7 +213,7 @@ export class AiService {
     const lines = [
       'Sos el asistente de WhatsApp de un negocio que agenda turnos. Respondé en español rioplatense, corto y amable. Podés usar *negrita* de WhatsApp, pero nada de listas largas ni títulos.',
       `Hoy es ${DAY_NAMES[t.dow]} ${two(t.d)}/${two(t.m)}/${t.y} (fecha ISO ${t.y}-${two(t.m)}-${two(t.d)}) y son las ${t.h}:${two(t.min)}, hora de Argentina.`,
-      'Se atiende de lunes a viernes, de 9:00 a 18:00, con turnos de 30 minutos. No hay turnos los fines de semana.',
+      `Se atiende ${describeSchedule()}. Los demás días no hay turnos.`,
       'Reglas:',
       '- Solo ayudás con turnos: ver horarios libres, reservar, ver los turnos propios y cancelarlos. Para cualquier otra cosa (preguntas generales, charla, otros temas) no respondas el contenido, ni siquiera brevemente: decí amablemente que solo manejás turnos y ofrecé ayuda con eso.',
       '- Nunca inventes horarios: consultá siempre get_availability.',

@@ -7,7 +7,7 @@ import {
   addDays,
   isValidSlot,
   LocalDate,
-  MAX_DAYS_AHEAD,
+  getScheduleConfig,
   slotsOfDay,
   todayLocal,
 } from './schedule';
@@ -57,7 +57,8 @@ export class AppointmentsService {
   async nextAvailability(now = new Date(), maxDays = 3): Promise<DayAvailability[]> {
     const today = todayLocal(now);
     const result: DayAvailability[] = [];
-    for (let i = 0; i <= MAX_DAYS_AHEAD && result.length < maxDays; i++) {
+    const { maxDaysAhead } = getScheduleConfig();
+    for (let i = 0; i <= maxDaysAhead && result.length < maxDays; i++) {
       const day = addDays(today, i);
       const slots = await this.freeSlots(day, now);
       if (slots.length > 0) result.push({ day, slots });
@@ -68,7 +69,7 @@ export class AppointmentsService {
   /** Reglas de horario que no necesitan la base. Lanza AppointmentError si no cumple. */
   private checkSlot(startsAt: Date, now: Date): void {
     if (startsAt <= now) throw new AppointmentError('PAST');
-    if (startsAt.getTime() > now.getTime() + MAX_DAYS_AHEAD * DAY_MS) {
+    if (startsAt.getTime() > now.getTime() + getScheduleConfig().maxDaysAhead * DAY_MS) {
       throw new AppointmentError('TOO_FAR');
     }
     if (!isValidSlot(startsAt)) throw new AppointmentError('OUTSIDE_HOURS');

@@ -6,7 +6,7 @@ import { Contact } from '../contacts/contact.entity';
 import { ContactsService } from '../contacts/contacts.service';
 import { MessagesService } from '../messages/messages.service';
 import { AiService, toConversation } from './ai.service';
-import { LLM_PROVIDER, LlmMessage, LlmRequest } from './llm.types';
+import { LLM_PROVIDERS, LlmMessage, LlmProviderEntry, LlmRequest } from './llm.types';
 
 const text = (t: string): LlmMessage => ({ role: 'model', parts: [{ type: 'text', text: t }] });
 const call = (name: string, args: Record<string, unknown>): LlmMessage => ({
@@ -30,11 +30,18 @@ describe('AiService', () => {
   const now = fromLocal(2026, 10, 15, 12, 0);
   const slot = fromLocal(2026, 10, 20, 15, 0);
 
-  async function build(withProvider = true) {
+  const fallback = { complete: jest.fn() };
+  const entry = (name: string, p: { complete: jest.Mock }, timeoutMs = 20_000): LlmProviderEntry => ({
+    name,
+    provider: p,
+    timeoutMs,
+  });
+
+  async function build(withProvider = true, providers = [entry('principal', provider)]) {
     const moduleRef = await Test.createTestingModule({
       providers: [
         AiService,
-        { provide: LLM_PROVIDER, useValue: withProvider ? provider : null },
+        { provide: LLM_PROVIDERS, useValue: withProvider ? providers : [] },
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: AppointmentsService, useValue: appointments },
         { provide: ContactsService, useValue: contacts },
@@ -221,6 +228,105 @@ describe('AiService', () => {
     provider.complete.mockResolvedValue(call('list_my_appointments', {}));
     expect(await service.reply(contact, 'mis turnos?', now)).toBeNull();
     expect(provider.complete).toHaveBeenCalledTimes(4);
+  });
+
+  describe('modelo de respaldo', () => {
+    let withFallback: AiService;
+
+    beforeEach(async () => {
+      fallback.complete.mockReset();
+      withFallback = await build(true, [entry('principal', provider, 12_000), entry('respaldo', fallback)]);
+    });
+
+    it('si el principal está saturado, responde el de respaldo', async () => {
+      provider.complete.mockRejectedValue(new Error('503 alta demanda'));
+      fallback.complete.mockResolvedValue(text('¡Hola! ¿Qué día querés?'));
+      expect(await withFallback.reply(contact, 'hola buenas', now)).toBe('¡Hola! ¿Qué día querés?');
+      expect(provider.complete).toHaveBeenCalledTimes(1);
+      expect(fallback.complete).toHaveBeenCalledTimes(1);
+    });
+
+    it('si el principal anda, no se toca el respaldo', async () => {
+      provider.complete.mockResolvedValue(text('ok'));
+      await withFallback.reply(contact, 'hola', now);
+      expect(fallback.complete).not.toHaveBeenCalled();
+    });
+
+    it('si el principal no contesta en su tiempo (12 s), se pasa al respaldo', async () => {
+      jest.useFakeTimers();
+      try {
+        provider.complete.mockReturnValue(new Promise(() => undefined));
+        fallback.complete.mockResolvedValue(text('respuesta del respaldo'));
+        const pending = withFallback.reply(contact, 'hola', now);
+        await jest.advanceTimersByTimeAsync(12_001);
+        expect(await pending).toBe('respuesta del respaldo');
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('si fallan los dos, devuelve null para responder sin IA', async () => {
+      provider.complete.mockRejectedValue(new Error('503'));
+      fallback.complete.mockRejectedValue(new Error('429'));
+      expect(await withFallback.reply(contact, 'hola', now)).toBeNull();
+    });
+
+    it('si el principal falla a mitad de camino, el respaldo arranca de cero sin sus datos internos', async () => {
+      appointments.freeSlots.mockResolvedValue([fromLocal(2026, 10, 20, 9, 0)]);
+      provider.complete
+        .mockResolvedValueOnce({
+          role: 'model',
+          parts: [
+            {
+              type: 'tool_call',
+              name: 'get_availability',
+              args: { date: '2026-10-20' },
+              raw: { thoughtSignature: 'firma-del-principal' },
+            },
+          ],
+        })
+        .mockRejectedValueOnce(new Error('503 en el segundo paso'));
+      fallback.complete.mockResolvedValue(text('El martes hay lugar a las 9:00.'));
+
+      expect(await withFallback.reply(contact, 'algo el martes', now)).toBe('El martes hay lugar a las 9:00.');
+
+      const firstRequest: LlmRequest = fallback.complete.mock.calls[0][0];
+      const parts = firstRequest.messages.flatMap((m) => m.parts);
+      expect(parts.some((p) => p.type === 'tool_call' || p.type === 'tool_result')).toBe(false);
+      expect(JSON.stringify(firstRequest)).not.toContain('firma-del-principal');
+    });
+
+    it('si fallan los dos DESPUÉS de pedir una reserva, no queda nada pendiente (la persona nunca vio la pregunta)', async () => {
+      appointments.assertBookable.mockResolvedValue(undefined);
+      // cada modelo alcanza a pedir la reserva y falla en el paso siguiente
+      for (const p of [provider, fallback]) {
+        p.complete
+          .mockResolvedValueOnce(call('request_booking', { date: '2026-10-20', time: '15:00' }))
+          .mockRejectedValueOnce(new Error('503 en el segundo paso'));
+      }
+      expect(await withFallback.reply(contact, 'reservame el martes a las 3', now)).toBeNull();
+      expect(contacts.setPending).not.toHaveBeenCalled();
+    });
+
+    it('si el principal falla a mitad de camino y el respaldo completa, se guarda una sola vez', async () => {
+      appointments.assertBookable.mockResolvedValue(undefined);
+      provider.complete
+        .mockResolvedValueOnce(call('request_booking', { date: '2026-10-20', time: '15:00' }))
+        .mockRejectedValueOnce(new Error('503'));
+      fallback.complete
+        .mockResolvedValueOnce(call('request_booking', { date: '2026-10-20', time: '15:00' }))
+        .mockResolvedValueOnce(text('ok'));
+      const reply = await withFallback.reply(contact, 'reservame el martes a las 3', now);
+      expect(reply).toContain('¿Confirmo tu turno para el mar 20/10 15:00?');
+      expect(contacts.setPending).toHaveBeenCalledTimes(1);
+    });
+
+    it('la cuota diaria se cuenta una sola vez aunque haya respaldo', async () => {
+      provider.complete.mockRejectedValue(new Error('503'));
+      fallback.complete.mockResolvedValue(text('ok'));
+      await withFallback.reply(contact, 'hola', now);
+      expect(contacts.consumeAiQuota).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

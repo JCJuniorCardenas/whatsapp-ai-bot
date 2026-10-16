@@ -46,8 +46,9 @@ class RecordingProvider implements LlmProvider {
 export async function runCase(evalCase: EvalCase, provider: LlmProvider): Promise<CaseResult> {
   const world = createWorld();
   const recorder = new RecordingProvider(provider);
+  // Un solo modelo, sin respaldo: la evaluación mide a ese modelo, no a la red de seguridad.
   const ai = new AiService(
-    recorder,
+    [{ name: 'evaluado', provider: recorder, timeoutMs: 20_000 }],
     new ConfigService({ AI_DAILY_LIMIT: '1000' }),
     world.appointments,
     world.contacts,

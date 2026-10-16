@@ -16,11 +16,10 @@ import { Contact, PendingAction } from '../contacts/contact.entity';
 import { ContactsService } from '../contacts/contacts.service';
 import { MessagesService } from '../messages/messages.service';
 import { AI_TOOLS } from './ai.tools';
-import { LLM_PROVIDER, LlmMessage, LlmPart, LlmProvider } from './llm.types';
+import { LLM_PROVIDERS, LlmMessage, LlmPart, LlmProviderEntry } from './llm.types';
 
 const MAX_INPUT_CHARS = 500;
 const MAX_STEPS = 4; // vueltas máximas al modelo por mensaje
-const TIMEOUT_MS = 20_000;
 const HISTORY_MESSAGES = 10;
 const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -59,7 +58,7 @@ export class AiService {
   private readonly logger = new Logger(AiService.name);
 
   constructor(
-    @Optional() @Inject(LLM_PROVIDER) private readonly provider: LlmProvider | null,
+    @Optional() @Inject(LLM_PROVIDERS) private readonly providers: LlmProviderEntry[] | null,
     private readonly config: ConfigService,
     private readonly appointments: AppointmentsService,
     private readonly contacts: ContactsService,
@@ -67,7 +66,7 @@ export class AiService {
   ) {}
 
   get enabled(): boolean {
-    return !!this.provider;
+    return !!this.providers?.length;
   }
 
   /**
@@ -80,7 +79,7 @@ export class AiService {
     now = new Date(),
     pending: PendingAction | null = null,
   ): Promise<string | null> {
-    if (!this.provider) return null;
+    if (!this.providers?.length) return null;
     if (text.length > MAX_INPUT_CHARS) {
       return `Tu mensaje es muy largo (máximo ${MAX_INPUT_CHARS} caracteres). Escribilo más corto o mandá *ayuda*.`;
     }
@@ -92,21 +91,28 @@ export class AiService {
       return 'Llegaste al límite de consultas de hoy. Podés seguir con comandos: escribí *ayuda*.';
     }
 
-    try {
-      return await this.converse(contact, text, now, pending);
-    } catch (err) {
-      this.logger.warn(`La IA falló, se responde sin ella: ${(err as Error).message}`);
-      return null;
+    // Si un modelo falla (saturado, sin cuota, muy lento), se repite la consulta entera con el
+    // siguiente. No se mezclan datos entre modelos: cada intento arranca de cero.
+    for (const [index, entry] of this.providers.entries()) {
+      try {
+        return await this.converse(entry, contact, text, now, pending);
+      } catch (err) {
+        const hasNext = index < this.providers.length - 1;
+        this.logger.warn(
+          `La IA (${entry.name}) falló: ${(err as Error).message}. ${hasNext ? 'Se prueba con el modelo de respaldo.' : 'Se responde sin IA.'}`,
+        );
+      }
     }
+    return null;
   }
 
   private async converse(
+    { provider, timeoutMs }: LlmProviderEntry,
     contact: Contact,
     text: string,
     now: Date,
     pending: PendingAction | null,
   ): Promise<string | null> {
-    const provider = this.provider as LlmProvider;
     const history = await this.messages.recent(
       contact,
       new Date(now.getTime() - HISTORY_WINDOW_MS),
@@ -126,7 +132,7 @@ export class AiService {
           tools: AI_TOOLS,
           maxOutputTokens: Number(this.config.get('AI_MAX_OUTPUT_TOKENS') ?? 1024),
         }),
-        TIMEOUT_MS,
+        timeoutMs,
       );
       messages.push(answer);
 
@@ -135,7 +141,7 @@ export class AiService {
       );
       if (calls.length === 0) {
         // Si se dejó una acción pendiente, la pregunta la arma el código: no depende del modelo.
-        if (confirmation) return confirmationQuestion(confirmation);
+        if (confirmation) return this.askConfirmation(contact, confirmation, now);
         const reply = answer.parts
           .map((p) => (p.type === 'text' ? p.text : ''))
           .join('')
@@ -151,7 +157,17 @@ export class AiService {
       }
       messages.push({ role: 'user', parts: results });
     }
-    return confirmation ? confirmationQuestion(confirmation) : null;
+    return confirmation ? this.askConfirmation(contact, confirmation, now) : null;
+  }
+
+  /**
+   * Deja la acción esperando el "sí" y devuelve la pregunta. Se guarda recién acá, justo antes de
+   * responder: si la IA falla a mitad de camino, no queda una acción pendiente que la persona
+   * nunca vio y que un "sí" cualquiera podría ejecutar.
+   */
+  private async askConfirmation(contact: Contact, action: PendingAction, now: Date): Promise<string> {
+    await this.contacts.setPending(contact, action, now);
+    return confirmationQuestion(action);
   }
 
   private async runTool(
@@ -174,8 +190,8 @@ export class AiService {
           const startsAt = parseSlot(args);
           if (!startsAt) return { result: { error: 'fecha u hora inválida' } };
           await this.appointments.assertBookable(startsAt, now);
+          // Todavía no se guarda como pendiente: eso pasa recién cuando la persona recibe la pregunta.
           const action: PendingAction = { type: 'book', startsAt: startsAt.toISOString() };
-          await this.contacts.setPending(contact, action, now);
           return {
             result: { status: 'esperando confirmación de la persona', when: formatSlot(startsAt) },
             pending: action,
@@ -190,7 +206,6 @@ export class AiService {
           if (!startsAt) return { result: { error: 'fecha u hora inválida' } };
           await this.appointments.assertCancellable(contact, startsAt, now);
           const action: PendingAction = { type: 'cancel', startsAt: startsAt.toISOString() };
-          await this.contacts.setPending(contact, action, now);
           return {
             result: { status: 'esperando confirmación de la persona', when: formatSlot(startsAt) },
             pending: action,

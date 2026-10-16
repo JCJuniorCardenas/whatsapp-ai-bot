@@ -78,6 +78,20 @@ describe('runCase', () => {
     expect(result.replies[0]).toBe('¿Para qué día?');
   });
 
+  it('un timeout (el proveedor no responde) también es infraestructura, no un error del modelo', async () => {
+    jest.useFakeTimers();
+    try {
+      const provider: LlmProvider = { complete: () => new Promise<LlmMessage>(() => undefined) };
+      const pending = runCase(caseById('res-lunes-10'), provider);
+      await jest.advanceTimersByTimeAsync(20_001);
+      const result = await pending;
+      expect(result.outcome).toBe('infra');
+      expect(result.detail).toContain('timeout');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('un fallo del proveedor se marca como infraestructura, no como error del modelo', async () => {
     const provider: LlmProvider = {
       complete: async () => {

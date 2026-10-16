@@ -20,10 +20,13 @@ export interface CaseResult {
 class RecordingProvider implements LlmProvider {
   readonly toolCalls: Observed['toolCalls'] = [];
   readonly errors: string[] = [];
+  /** Llamadas que todavía no respondieron. Si al terminar queda alguna, el servicio cortó por tiempo. */
+  inFlight = 0;
 
   constructor(private readonly inner: LlmProvider) {}
 
   async complete(request: LlmRequest): Promise<LlmMessage> {
+    this.inFlight++;
     try {
       const answer = await this.inner.complete(request);
       for (const part of answer.parts) {
@@ -33,6 +36,8 @@ class RecordingProvider implements LlmProvider {
     } catch (err) {
       this.errors.push((err as Error).message);
       throw err;
+    } finally {
+      this.inFlight--;
     }
   }
 }
@@ -63,6 +68,10 @@ export async function runCase(evalCase: EvalCase, provider: LlmProvider): Promis
 
   if (recorder.errors.length > 0) {
     return { ...base, outcome: 'infra', detail: `falló el proveedor: ${recorder.errors[0].slice(0, 160)}` };
+  }
+  if (recorder.inFlight > 0) {
+    // El servicio dejó de esperar: es lentitud del proveedor, no una respuesta equivocada del modelo.
+    return { ...base, outcome: 'infra', detail: 'el proveedor no respondió a tiempo (timeout)' };
   }
   const observed: Observed = {
     toolCalls: recorder.toolCalls,

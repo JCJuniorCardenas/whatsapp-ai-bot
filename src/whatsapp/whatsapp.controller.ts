@@ -43,8 +43,9 @@ export class WhatsappController {
   @HttpCode(200)
   @UseGuards(SignatureGuard)
   @ApiOperation({ summary: 'Recibe mensajes de WhatsApp (firmado por Meta)' })
-  async receive(@Body() payload: WhatsappWebhookPayload): Promise<string> {
-    await this.whatsapp.handleIncoming(payload);
+  receive(@Body() payload: WhatsappWebhookPayload): string {
+    // Se contesta 200 enseguida y se procesa en segundo plano (la IA puede tardar).
+    this.whatsapp.accept(payload);
     return 'EVENT_RECEIVED';
   }
 }

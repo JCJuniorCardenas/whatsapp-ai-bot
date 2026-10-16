@@ -118,6 +118,7 @@ describe('Webhook de WhatsApp', () => {
         .set('x-hub-signature-256', sign(body))
         .send(body)
         .expect(200);
+      await app.get(WhatsappService).idle();
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -129,6 +130,7 @@ describe('Webhook de WhatsApp', () => {
         .set('x-hub-signature-256', sign(body))
         .send(body)
         .expect(200);
+      await app.get(WhatsappService).idle();
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const [url, init] = fetchMock.mock.calls[0];
@@ -141,6 +143,93 @@ describe('Webhook de WhatsApp', () => {
         to: '541100000000', // se saca el 9 de los celulares argentinos
         text: { body: 'respuesta del bot' },
       });
+    });
+
+    it('le contesta 200 a Meta sin esperar a que el bot termine de pensar', async () => {
+      let release!: (text: string) => void;
+      bot.reply.mockReturnValue(new Promise<string>((resolve) => (release = resolve)));
+      const body = JSON.stringify(payload);
+
+      // supertest vuelve recién cuando llegó la respuesta HTTP: el bot sigue trabado y aun así hubo 200
+      await request(app.getHttpServer())
+        .post('/webhook')
+        .set('Content-Type', 'application/json')
+        .set('x-hub-signature-256', sign(body))
+        .send(body)
+        .expect(200)
+        .expect('EVENT_RECEIVED');
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      release('respuesta tardía');
+      await app.get(WhatsappService).idle();
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body).text.body).toBe('respuesta tardía');
+    });
+
+    it('los mensajes seguidos de una misma persona se procesan en orden, no en paralelo', async () => {
+      const events: string[] = [];
+      bot.reply.mockImplementation(async (_contact: unknown, text: string) => {
+        events.push(`empieza ${text}`);
+        await new Promise((r) => setTimeout(r, text === 'uno' ? 30 : 0));
+        events.push(`termina ${text}`);
+        return `re: ${text}`;
+      });
+      const two = {
+        ...payload,
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  messages: [
+                    { from: '5491100000000', id: 'm1', type: 'text', text: { body: 'uno' } },
+                    { from: '5491100000000', id: 'm2', type: 'text', text: { body: 'dos' } },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const body = JSON.stringify(two);
+      await request(app.getHttpServer())
+        .post('/webhook')
+        .set('Content-Type', 'application/json')
+        .set('x-hub-signature-256', sign(body))
+        .send(body)
+        .expect(200);
+      await app.get(WhatsappService).idle();
+      expect(events).toEqual(['empieza uno', 'termina uno', 'empieza dos', 'termina dos']);
+    });
+
+    it('un mensaje que falla no frena al siguiente', async () => {
+      bot.reply.mockRejectedValueOnce(new Error('se cayó la IA')).mockResolvedValueOnce('re: dos');
+      const two = {
+        ...payload,
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  messages: [
+                    { from: '5491100000000', id: 'm1', type: 'text', text: { body: 'uno' } },
+                    { from: '5491100000000', id: 'm2', type: 'text', text: { body: 'dos' } },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const body = JSON.stringify(two);
+      await request(app.getHttpServer())
+        .post('/webhook')
+        .set('Content-Type', 'application/json')
+        .set('x-hub-signature-256', sign(body))
+        .send(body)
+        .expect(200);
+      await app.get(WhatsappService).idle();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body).text.body).toBe('re: dos');
     });
   });
 });

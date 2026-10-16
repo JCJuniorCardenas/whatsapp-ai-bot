@@ -1,12 +1,17 @@
 # WhatsApp AI Bot
 
-Bot de WhatsApp para agendar turnos. **Fase 1:** webhook de Meta + eco del mensaje (sin IA ni base de datos todavía).
+Bot de WhatsApp que agenda turnos. Entiende comandos (`turno 20/10 10:30`) y frases libres ("quiero un turno el martes a la tarde") con IA, y guarda todo en PostgreSQL.
 
-Stack: NestJS, TypeScript, PostgreSQL con TypeORM, Swagger, Jest. Deploy en Railway.
+Stack: NestJS, TypeScript, PostgreSQL con TypeORM, Swagger, Jest, Gemini (opcional). Deploy en Railway.
 
-**Fase 3 (agenda):** el bot entiende comandos y maneja turnos (ver abajo).
+## Qué tiene
 
-**Fase 2:** se guardan contactos y mensajes en PostgreSQL y se ignoran los reintentos de Meta (no se responde dos veces al mismo mensaje).
+- **Webhook de Meta** con firma HMAC validada, respuesta `200` inmediata y procesamiento en segundo plano. Los mensajes de una misma persona se procesan en orden (cola por contacto) y los reintentos de Meta no duplican respuestas.
+- **Agenda de turnos** con horario configurable y un índice único en la base: dos reservas simultáneas del mismo horario no se pisan.
+- **IA que propone y el código decide:** reservar y cancelar exigen un "sí" forzado por el código; el modelo nunca elige a quién afecta una acción.
+- **Operación:** `/health` que verifica la base, migraciones automáticas, apagado ordenado (termina los mensajes en curso), límite de pedidos por IP y Swagger apagado en producción.
+- **Evaluación de la IA** reproducible (`npm run eval:ai`), con 33 casos y un informe por modelo.
+- Más de 200 tests en Jest y commits chicos.
 
 ## Cómo correrlo
 
@@ -91,6 +96,39 @@ Cómo está pensado:
 Variables: `GEMINI_API_KEY` (gratis en aistudio.google.com/apikey), `AI_MODEL`, `AI_THINKING_LEVEL` y `AI_DAILY_LIMIT`.
 
 > En el plan gratis de Gemini, Google puede usar lo que se le envía para mejorar sus productos. Al modelo solo le llegan frases sobre turnos, nunca teléfonos. Los modelos disponibles gratis y sus límites cambian: se ven en Google AI Studio.
+
+## Horario configurable
+
+Todo el horario sale de variables de entorno (valores por defecto entre paréntesis). Si alguna es inválida, la app **no arranca** y dice qué corregir.
+
+| Variable | Qué es |
+|---|---|
+| `BUSINESS_NAME` | Nombre del negocio, aparece en el saludo (vacío) |
+| `SCHEDULE_OPEN` / `SCHEDULE_CLOSE` | Apertura y cierre en `HH:MM` (`09:00` / `18:00`) |
+| `SCHEDULE_SLOT_MINUTES` | Duración de cada turno (`30`) |
+| `SCHEDULE_DAYS` | Días de atención, `0` = domingo ... `6` = sábado; admite rangos y listas: `1-5`, `1,3,5` (`1-5`) |
+| `SCHEDULE_MAX_DAYS_AHEAD` | Hasta cuántos días adelante se puede reservar (`60`) |
+
+La ayuda, los errores y el prompt de la IA describen siempre el horario vigente. Ejemplo para otro negocio: `SCHEDULE_DAYS=6 SCHEDULE_OPEN=10:00 SCHEDULE_CLOSE=12:00 SCHEDULE_SLOT_MINUTES=40`.
+
+## Seguridad y límites
+
+- **Firma de Meta** validada con HMAC-SHA256 (`timingSafeEqual`) sobre el cuerpo crudo.
+- **Límite de pedidos por IP:** 10 por minuto en la verificación del webhook (acepta el token por URL, así que frena los intentos a ciegas) y 300 por minuto en el resto. Detrás de Railway se usa la IP real (`trust proxy`).
+- **Swagger** (`/docs`) está activo en desarrollo y apagado en producción; `SWAGGER_ENABLED=true` lo publica (por ejemplo, para mostrarlo en un portfolio).
+- **Secretos** solo en variables de entorno; el `.env` no se sube.
+
+## Evaluación de la IA
+
+`npm run eval:ai` corre 33 conversaciones contra Gemini y mide el **estado final**, no el texto: qué quedó pendiente y qué herramientas usó. Cada caso corre con las reglas reales de turnos, una base en memoria y una fecha fija (jueves 15/10/2026 12:00), así que los resultados son comparables entre modelos. Distingue los errores del modelo de los fallos del proveedor (saturación, cuota) y los reintenta.
+
+```bash
+npm run eval:ai                                   # usa AI_MODEL del .env
+npm run eval:ai -- --models gemini-3.5-flash-lite,gemini-3.8-flash --write
+npm run eval:ai -- --only res-lunes-10,seg-tema --delay 5000
+```
+
+`--write` guarda un informe por modelo en `docs/evals/`. Gasta cuota real del plan gratis de Gemini (unas 2 a 3 llamadas por caso); como comparte el proyecto con el bot en producción, conviene correrlo de a poco.
 
 ## Deploy en Railway
 

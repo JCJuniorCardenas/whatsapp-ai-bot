@@ -9,13 +9,19 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { SignatureGuard } from './signature.guard';
 import { WhatsappService } from './whatsapp.service';
 import { WhatsappWebhookPayload } from './whatsapp.types';
 
+const VERIFY_LIMIT_PER_MINUTE = 10;
+
+// Límite por IP y por minuto. Los mensajes de Meta llegan en ráfagas, así que ahí es amplio;
+// la verificación (GET) acepta el token por la URL, así que es estricta contra los intentos a ciegas.
 @ApiTags('whatsapp')
 @Controller('webhook')
+@UseGuards(ThrottlerGuard)
 export class WhatsappController {
   constructor(
     private readonly whatsapp: WhatsappService,
@@ -23,6 +29,7 @@ export class WhatsappController {
   ) {}
 
   @Get()
+  @Throttle({ default: { limit: VERIFY_LIMIT_PER_MINUTE, ttl: 60_000 } })
   @ApiOperation({ summary: 'Verificación del webhook (la llama Meta)' })
   @ApiQuery({ name: 'hub.mode' })
   @ApiQuery({ name: 'hub.verify_token' })

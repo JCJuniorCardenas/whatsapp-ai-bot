@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { createHmac } from 'crypto';
 import request from 'supertest';
 import { BotService } from '../bot/bot.service';
@@ -61,6 +62,7 @@ describe('Webhook de WhatsApp', () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true, load: [() => env] }),
+        ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
       ],
       controllers: [WhatsappController],
       providers: [
@@ -91,6 +93,15 @@ describe('Webhook de WhatsApp', () => {
         .get('/webhook')
         .query({ 'hub.mode': 'subscribe', 'hub.verify_token': 'malo', 'hub.challenge': '777' })
         .expect(403);
+    });
+
+    it('frena con 429 a quien prueba tokens a ciegas (más de 10 intentos por minuto)', async () => {
+      const intento = () =>
+        request(app.getHttpServer())
+          .get('/webhook')
+          .query({ 'hub.mode': 'subscribe', 'hub.verify_token': 'adivinando', 'hub.challenge': '1' });
+      for (let i = 0; i < 10; i++) await intento().expect(403);
+      await intento().expect(429);
     });
   });
 

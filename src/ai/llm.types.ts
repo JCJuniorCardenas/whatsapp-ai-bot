@@ -35,4 +35,14 @@ export interface LlmProvider {
   complete(request: LlmRequest): Promise<LlmMessage>;
 }
 
-export const LLM_PROVIDER = Symbol('LLM_PROVIDER');
+/** Un proveedor listo para usar, con cuánto se lo espera antes de pasar al siguiente. */
+export interface LlmProviderEntry {
+  /** Nombre para los logs (ej. el modelo). */
+  name: string;
+  provider: LlmProvider;
+  /** Tiempo máximo de espera por cada respuesta de este proveedor. */
+  timeoutMs: number;
+}
+
+/** Proveedores en orden de preferencia: si el primero falla, se intenta con el siguiente. Vacío = IA apagada. */
+export const LLM_PROVIDERS = Symbol('LLM_PROVIDERS');

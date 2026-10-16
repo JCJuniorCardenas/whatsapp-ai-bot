@@ -13,6 +13,37 @@ Stack: NestJS, TypeScript, PostgreSQL con TypeORM, Swagger, Jest, Gemini (opcion
 - **Evaluación de la IA** reproducible (`npm run eval:ai`), con 33 casos y un informe por modelo.
 - Más de 200 tests en Jest y commits chicos.
 
+## Demo
+
+Conversación real con el bot en producción (WhatsApp, Railway, Gemini). La persona escribe con sus palabras, el bot ofrece horarios reales, **pide confirmación** y recién con el "sí" reserva. El número del bot está tapado.
+
+<p align="center">
+  <img src="docs/assets/conversacion.jpg" width="320" alt="Conversación en WhatsApp: pedido de turno en lenguaje natural, horarios disponibles, confirmación y reserva">
+</p>
+
+## Cómo funciona
+
+```mermaid
+flowchart TD
+    P([Persona en WhatsApp]) --> M[Meta WhatsApp Cloud API]
+    M -->|POST /webhook firmado| W[Valida la firma HMAC<br/>y responde 200 al instante]
+    W --> Q[Cola por persona<br/>mensajes en orden y sin duplicados]
+    Q --> Y{¿Responde sí o no a una<br/>confirmación pendiente?}
+    Y -->|Sí| A[Agenda de turnos<br/>reglas y horario configurable]
+    Y -->|No| C{¿Es un comando<br/>exacto?}
+    C -->|Sí| A
+    C -->|No| I[IA Gemini<br/>con modelo de respaldo]
+    I -->|ver horarios, listar turnos| A
+    I -->|reservar o cancelar| K[Pregunta de confirmación<br/>armada por el código]
+    A <--> D[(PostgreSQL<br/>índice único por horario)]
+    A --> R[Respuesta]
+    I --> R
+    K --> R
+    R -->|Graph API| M
+```
+
+La IA solo **propone**: reservar y cancelar quedan pendientes hasta que la persona responda "sí", y esa pregunta la arma el código, no el modelo. Las reglas de horario y el candado contra dobles reservas viven en la agenda y la base, no en el prompt.
+
 ## Cómo correrlo
 
 ```bash
